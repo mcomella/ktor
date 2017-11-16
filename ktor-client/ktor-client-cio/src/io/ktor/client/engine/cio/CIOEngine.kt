@@ -29,7 +29,13 @@ class CIOEngine : HttpClientEngine {
         val (response, responseBody) = try {
             writeRequest(request, output)
             val response = parseResponse(input) ?: throw EOFException("Failed to parse HTTP response: unexpected EOF")
-            val responseBodyParser = writer(ioCoroutineDispatcher) { parseHttpBody(response.headers, input, channel) }
+            val contentLength = response.headers["Content-Length"]?.toString()?.toLong() ?: -1L
+            val transferEncoding = response.headers["Transfer-Encoding"]
+            val connectionType = ConnectionOptions.parse(response.headers["Connection"])
+
+            val responseBodyParser = writer(ioCoroutineDispatcher) {
+                parseHttpBody(contentLength, transferEncoding, connectionType, input, channel)
+            }
 
             response to responseBodyParser
         } catch (exception: IOException) {
