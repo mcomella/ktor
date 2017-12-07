@@ -21,7 +21,8 @@ private data class JettyResponseChunk(val buffer: ByteBuffer, val callback: Call
 
 internal class JettyResponseListener(
         private val channel: ByteWriteChannel,
-        private val dispatcher: CoroutineDispatcher
+        private val dispatcher: CoroutineDispatcher,
+        private val context: CompletableDeferred<Unit>
 ) : Stream.Listener {
     private val headersBuilder: HeadersBuilder = HeadersBuilder(caseInsensitiveKey = true)
     private val onHeadersReceived: CompletableFuture<HttpStatusCode?> = CompletableFuture()
@@ -86,16 +87,17 @@ internal class JettyResponseListener(
                 try {
                     channel.writeFully(buffer)
                     callback.succeeded()
-                } catch (t: Throwable) {
-                    callback.failed(t)
-                    channel.close(t)
-                    return@launch
+                } catch (cause: Throwable) {
+                    callback.failed(cause)
+                    throw cause
                 }
             }
-        } catch (t: Throwable) {
-            channel.close(t)
+        } catch (cause: Throwable) {
+            channel.close(cause)
+            this@JettyResponseListener.context.completeExceptionally(cause)
             return@launch
         } finally {
+            this@JettyResponseListener.context.complete(Unit)
             channel.close()
         }
     }
